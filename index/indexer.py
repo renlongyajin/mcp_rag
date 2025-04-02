@@ -3,11 +3,14 @@ import pickle
 import time
 from pathlib import Path
 from typing import List, Optional
+
 import faiss
 import numpy as np
 import openai
 
 from FileHashManager import FileHashManager
+from log import logger
+from utils import batch_embed
 
 
 class KnowledgeIndexer:
@@ -35,7 +38,7 @@ class KnowledgeIndexer:
         root = Path(os.path.expanduser(root_dir))
         for md_file in root.rglob('*.md'):
             with open(md_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+                content = f.read().encode("utf8")
             for chunk in self.split_into_chunks(content):
                 self.file_map[len(self.file_map)] = (str(md_file), chunk)
         return self
@@ -70,20 +73,39 @@ class ProxyOpenAIIndexer(KnowledgeIndexer):
 
     def _batch_embedding(self, texts: List[str]) -> List[List[float]]:
         """带代理支持的嵌入生成"""
-        max_retries = 3
-        for attempt in range(max_retries):
+        # 过滤非字符串和空文本
+        valid_texts = [str(t).strip() for t in texts if t and str(t).strip()]
+        if not valid_texts:
+            return []
+
+        # 初始化结果容器（维护与valid_texts相同的顺序）
+        all_embeddings = []
+        batches = batch_embed(valid_texts, model_name=self.api_model)
+        batch_index = 0
+        for batch in batches:
+            batch_index += 1
+            start_time = time.time()
             try:
+                # for text in batch:
                 response = self.client.embeddings.create(
-                    input=texts,
+                    input=batch,
                     model=self.api_model,
                     timeout=30
                 )
-                return [data.embedding for data in response.data]
+                # 将当前批次的embedding添加到总列表
+                batch_embeddings = [data.embedding for data in response.data]
+                all_embeddings.extend(batch_embeddings)
+                logger.info(
+                    f"[{batch_index}/{len(batches)}] 成功处理批次 {len(batch)} 条，耗时 {(time.time() - start_time):.2f}s")
             except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                time.sleep(2 ** attempt)
-        return [[]] * len(texts)
+                logger.error(f"[{batch_index}/{len(batches)}] 批次处理失败：{str(e)}")
+                all_embeddings.extend([[] for _ in batch])  # 保持长度一致
+            # 最终验证（确保每个输入都有对应输出）
+        if len(all_embeddings) != len(valid_texts):
+            logger.error(f"结果数量不匹配！输入 {len(valid_texts)} 条，输出 {len(all_embeddings)} 条")
+            return []
+
+        return all_embeddings
 
     def build_index(self):
         texts = [v[1] for v in self.file_map.values()]
@@ -145,6 +167,8 @@ class OptimizedIndexer(PersistentIndexer):
             # 处理新文件/修改过的文件
             with open(md_file, 'r', encoding='utf-8') as f:
                 content = f.read()
+                if not content.strip():  # 跳过无效文档
+                    continue
                 self.hash_manager.update_hash(file_path, content)
 
                 for chunk in self.split_into_chunks(content):
@@ -179,5 +203,3 @@ class APIQueryIndexer(ProxyOpenAIIndexer):
         """重写编码方法"""
         embeds = self._batch_embedding(queries)
         return np.array(embeds).astype('float32')
-
-

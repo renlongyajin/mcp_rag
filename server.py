@@ -1,11 +1,12 @@
+import os
+
 import numpy as np
 from dotenv import load_dotenv
-
-from FileLevelIndexer import FileLevelIndexer, OptimizedIndexer2
-from index.indexer import OptimizedIndexer
-import os
 from fastapi import FastAPI
 from pydantic import BaseModel
+
+from FileLevelIndexer import OptimizedIndexer2
+from index.indexer import OptimizedIndexer
 
 load_dotenv()
 app = FastAPI()
@@ -90,24 +91,24 @@ class FileChangeHandler(FileSystemEventHandler):
             auto_reindex()  # 实时更新修改的文件
 
 
+knowledge_dir = r"E:\AI\my_project\dnd5e\output2"
+
 observer = Observer()
-observer.schedule(FileChangeHandler(), path='./knowledge_base', recursive=True)
+observer.schedule(FileChangeHandler(), path=knowledge_dir, recursive=True)
 observer.start()
 
 import uvicorn
-
-knowledge_dir = r"./knowledge_base/"
 
 if __name__ == "__main__":
     # 首次启动或强制重建时使用
     if os.getenv("REBUILD_INDEX"):
         print("Force rebuilding index...")
-        indexer.scan_files(knowledge_dir).build_index()
+        # indexer.scan_files(knowledge_dir).build_index()
         file_level_indexer.scan_files(knowledge_dir).build_index()
     else:
         # 常规启动自动加载已有索引
         try:
-            indexer.build_index()
+            # indexer.build_index()
             file_level_indexer.build_index()
         except Exception as e:
             print(f"Index loading failed: {e}, rebuilding...")

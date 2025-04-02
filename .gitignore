@@ -1,7 +1,7 @@
 .idea
 __pycache__
 cache/
-knowlege_base/
+knowledge_base/
 previous/
 file_hashes.db
 file_hashes2.pkl

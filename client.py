@@ -1,9 +1,11 @@
 # client.py
 import argparse
 import json
-import requests
 import sys
-from typing import Optional, Dict, Any
+from typing import Dict, Any
+
+import requests
+from langchain.memory import ConversationBufferMemory
 
 DEFAULT_ENDPOINT = "http://localhost:8123/search"
 
@@ -84,8 +86,107 @@ def main():
         print(output_str)
 
 
+from langchain.tools import BaseTool
+from typing import Optional, Type
+from pydantic import BaseModel, Field
+
+
+class MCPQueryInput(BaseModel):
+    query: str = Field(description="搜索查询内容")
+    top_k: Optional[int] = Field(default=3, description="返回的结果数量")
+
+
+class MCPRAGTool(BaseTool):
+    name: str = "mcp_rag_search"
+    description: str = """
+    当需要查询特定领域知识或最新信息时使用此工具。
+    输入应该是详细的搜索查询语句。
+    """
+    args_schema: Type[BaseModel] = MCPQueryInput
+
+    def _run(self, query: str, top_k: int = 3) -> str:
+        # 调用你现有的MCP服务
+        response = send_query(query, top_k=top_k)
+
+        if "error" in response:
+            return f"查询失败: {response['error']}"
+
+        # 格式化返回结果
+        results = []
+        for item in response.get("results", []):
+            results.append(
+                f"文件路径: {item.get('path', '无')}\n"
+                f"内容: {item.get('excerpt', '无')}\n"
+            )
+
+        return "\n\n".join(results) if results else "未找到相关结果"
+
+    async def _arun(self, query: str, top_k: int = 10) -> str:
+        # 异步支持（可选）
+        return self._run(query, top_k)
+
+
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+tools = [MCPRAGTool()]
+
+
+# 修改后的 create_mcp_agent 函数
+def create_mcp_agent():
+    # 1. 定义工具集
+    tools = [MCPRAGTool()]
+
+    # 2. 创建带类型标注的内存对象
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        return_messages=True,  # 关键修复点
+        output_key="output"
+    )
+
+    # 3. 更新提示模板中的消息占位符
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """
+                你是一个智能助手，可以访问MCP知识库系统获取专业信息。
+                请用中文友好地回答用户问题，请使用工具获取最新信息。
+                如果使用工具查询，请确保查询语句精确且完整。
+                如果MCP知识库中不存在答案，请回复“我不知道”，不要自己编造答案。
+                """),
+        MessagesPlaceholder("chat_history", optional=True),
+        ("human", "{input}"),
+        MessagesPlaceholder("agent_scratchpad")
+    ])
+
+    # 4. 选择LLM模型
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+
+    # 5. 创建Agent
+    agent = create_openai_tools_agent(llm, tools, prompt)
+
+    # 6. 创建执行器（集成内存）
+    return AgentExecutor(
+        agent=agent,
+        tools=tools,
+        memory=memory,
+        verbose=True,
+        return_intermediate_steps=True,  # 新增关键参数
+        handle_parsing_errors=True
+    )
+
+
+# 修改后的调用函数
+def main2():
+    agent = create_mcp_agent()
+    while True:
+        question = input("用户输入: ")
+        response = agent.invoke({"input": question})
+        print(f"助手回复: {response['output']}")
+
+
 if __name__ == "__main__":
-    main()
+    # main()
+    main2()
 
 # python client.py --query LSTM --pretty
 # python client.py --endpoint http://localhost:8123/search2 --query LSTM --pretty
