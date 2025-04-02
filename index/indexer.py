@@ -9,6 +9,7 @@ import numpy as np
 import openai
 
 from FileHashManager import FileHashManager
+from config.config import global_config
 from log import logger
 from utils import batch_embed
 
@@ -124,6 +125,7 @@ class PersistentIndexer(ProxyOpenAIIndexer):
             faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
         else:
             faiss_index_dir = ".."
+        faiss_index_dir = os.path.join(faiss_index_dir, global_config.knowledge_base.knowledge_name)
         os.makedirs(faiss_index_dir, exist_ok=True)
         index_file = os.path.join(faiss_index_dir, index_file)
         super().__init__(**kwargs)

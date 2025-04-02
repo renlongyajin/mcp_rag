@@ -9,6 +9,7 @@ import faiss
 import numpy as np
 import openai
 
+from config.config import global_config
 from log import logger
 from utils import batch_embed
 
@@ -21,6 +22,7 @@ class FileHashManager:
             file_manager_dir = os.getenv("FILE_MANAGER_DIR")
         else:
             file_manager_dir = "."
+        file_manager_dir = os.path.join(file_manager_dir, global_config.knowledge_base.knowledge_name)
         self.hash_db_path = os.path.join(file_manager_dir, hash_db_path)
         self._pending_changes = False
         self.hash_db_path = Path(self.hash_db_path)
@@ -210,6 +212,7 @@ class PersistentIndexer(ProxyOpenAIIndexer):
             faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
         else:
             faiss_index_dir = ".."
+        faiss_index_dir = os.path.join(faiss_index_dir, global_config.knowledge_base.knowledge_name)
         os.makedirs(faiss_index_dir, exist_ok=True)
         index_file = os.path.join(faiss_index_dir, index_file)
         super().__init__(**kwargs)

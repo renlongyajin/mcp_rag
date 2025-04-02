@@ -1,8 +1,10 @@
-import pickle
-from pathlib import Path
-from hashlib import md5
 import os
+import pickle
 import time
+from hashlib import md5
+from pathlib import Path
+
+from config.config import global_config
 
 
 class FileHashManager:
@@ -13,6 +15,7 @@ class FileHashManager:
             file_manager_dir = os.getenv("FILE_MANAGER_DIR")
         else:
             file_manager_dir = "."
+        file_manager_dir = os.path.join(file_manager_dir, global_config.knowledge_base.knowledge_name)
         os.makedirs(file_manager_dir, exist_ok=True)
         hash_db_path = os.path.join(file_manager_dir, hash_db_path)
         self.hash_db_path = Path(hash_db_path)

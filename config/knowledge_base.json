@@ -1,0 +1,10 @@
+{
+  "dnd5e不全书": {
+    "knowledge_dir": "E:\\AI\\my_project\\dnd5e\\output2",
+    "description": "这是一个dnd5e的不全书（仅包含中文部分），用来回答关于dnd5e的各种问题。"
+  },
+  "LLM面试库": {
+    "knowledge_dir": "E:\\AI\\my_project\\mcp_rag\\knowledge_base",
+    "description": "这是一个LLM相关的面试库"
+  }
+}
