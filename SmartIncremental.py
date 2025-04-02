@@ -45,7 +45,7 @@ class DummyModel:
 
 
 file_level_indexer = OptimizedIndexer2(
-api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=os.getenv("OPENAI_API_KEY"),
     proxy_url=os.getenv("OPENAI_BASE_URL")
 )
 
@@ -64,6 +64,7 @@ async def semantic_search(request: QueryRequest):
                 "excerpt": content
             })
     return {"results": results}
+
 
 # ------------ 3. 自动更新 ------------
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -102,12 +103,12 @@ if __name__ == "__main__":
     if os.getenv("REBUILD_INDEX"):
         print("Force rebuilding index...")
         indexer.scan_files(knowledge_dir).build_index()
-        # file_level_indexer.scan_files(knowledge_dir).build_index()
+        file_level_indexer.scan_files(knowledge_dir).build_index()
     else:
         # 常规启动自动加载已有索引
         try:
             indexer.build_index()
-            # file_level_indexer.scan_files(knowledge_dir).build_index()
+            file_level_indexer.build_index()
         except Exception as e:
             print(f"Index loading failed: {e}, rebuilding...")
     print("服务启动前检查：")

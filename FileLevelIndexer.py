@@ -14,9 +14,14 @@ import openai
 class FileHashManager:
     """文件哈希状态管理器"""
 
-    def __init__(self, hash_db_path: str = "./file_hashes2.pkl"):
+    def __init__(self, hash_db_path: str = "file_hashes2.pkl"):
+        if os.getenv("FILE_MANAGER_DIR"):
+            file_manager_dir = os.getenv("FILE_MANAGER_DIR")
+        else:
+            file_manager_dir = "."
+        self.hash_db_path = os.path.join(file_manager_dir, hash_db_path)
         self._pending_changes = False
-        self.hash_db_path = Path(hash_db_path)
+        self.hash_db_path = Path(self.hash_db_path)
         self.file_hashes = self._load_hashes()
 
     def _load_hashes(self) -> Dict[str, str]:
@@ -68,8 +73,8 @@ class FileHashManager:
 class FileLevelIndexer:
     def __init__(self,
                  model=None,
-                 index_path: str = "./file_index.faiss",
-                 hash_db_path: str = "./file_hashes2.pkl"):
+                 index_path: str = "file_index.faiss",
+                 hash_db_path: str = "file_hashes2.pkl"):
         """
         初始化参数
         :param model: 嵌入模型（需实现encode方法）
@@ -151,7 +156,6 @@ class ProxyOpenAIIndexer(FileLevelIndexer):
 
     def _batch_embedding(self, texts: List[str]) -> List[List[float]]:
         """带代理支持的嵌入生成"""
-        # texts = [text[:4000] if len(text) > 4000 else text for text in texts]  # 截取前4000个字
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -211,7 +215,6 @@ class OptimizedIndexer2(PersistentIndexer):
         self.hash_manager = FileHashManager()
 
     def scan_files(self, root_dir='./knowledge_base'):
-        """优化后的文件扫描"""
         new_file_map = {}
         root = Path(os.path.expanduser(root_dir))
 
@@ -226,21 +229,19 @@ class OptimizedIndexer2(PersistentIndexer):
 
             # 处理新文件/修改过的文件
             with open(md_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+                content = f.read()[:7000]
                 self.hash_manager.update_hash(file_path)
 
                 new_file_map[len(new_file_map)] = (file_path, content)
 
-        # 定期自动保存哈希数据库（例如每处理100个文件）
-        if len(new_file_map) % 100 == 0:
-            self.hash_manager.save_hashes()
-
         self.file_map = new_file_map
+        self.hash_manager.save_hashes()
         return self
 
     def build_index(self):
         try:
             super().build_index()
+            self._save_index()
         finally:
             # 确保索引构建完成后保存哈希状态
             self.hash_manager.save_hashes()
@@ -249,7 +250,4 @@ class OptimizedIndexer2(PersistentIndexer):
         """保存索引和元数据"""
         faiss.write_index(self.index, str(self.index_file))
         with open(self.metadata_file, 'wb') as f:
-            pickle.dump({
-                'file_map': self.file_map,
-                'file_hashes': self.hash_manager.file_hashes
-            }, f)
+            pickle.dump(self.file_map, f)

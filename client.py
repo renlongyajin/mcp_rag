@@ -5,7 +5,7 @@ import requests
 import sys
 from typing import Optional, Dict, Any
 
-DEFAULT_ENDPOINT = "http://localhost:8123/search2"
+DEFAULT_ENDPOINT = "http://localhost:8123/search"
 
 
 def send_query(
@@ -86,3 +86,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python client.py --query LSTM --pretty
+# python client.py --endpoint http://localhost:8123/search2 --query LSTM --pretty
