@@ -91,7 +91,8 @@ class FileChangeHandler(FileSystemEventHandler):
             auto_reindex()  # 实时更新修改的文件
 
 
-knowledge_dir = r"E:\AI\my_project\dnd5e\output2"
+knowledge_dir = os.getenv("KNOWLEDGE_BASE")
+assert knowledge_dir.strip() != ""
 
 observer = Observer()
 observer.schedule(FileChangeHandler(), path=knowledge_dir, recursive=True)
