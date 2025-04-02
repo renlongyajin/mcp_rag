@@ -151,9 +151,9 @@ class OptimizedIndexer(PersistentIndexer):
                 for chunk in self.split_into_chunks(content):
                     new_file_map[len(new_file_map)] = (file_path, chunk)
 
-        # 定期自动保存哈希数据库（例如每处理100个文件）
-        if len(new_file_map) % 100 == 0:
-            self.hash_manager.save_hashes()
+            # 定期自动保存哈希数据库（例如每处理100个文件）
+            if len(new_file_map) % 100 == 0:
+                self.hash_manager.save_hashes()
 
         self.file_map = new_file_map
         return self
