@@ -2,7 +2,6 @@ import os
 import pickle
 import time
 from pathlib import Path
-from hashlib import md5
 from typing import List, Optional
 import faiss
 import numpy as np

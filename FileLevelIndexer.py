@@ -1,13 +1,12 @@
 import os
 import pickle
 import time
-
-import numpy as np
-import faiss
-from pathlib import Path
 from hashlib import md5
+from pathlib import Path
 from typing import Dict, Tuple, List, Optional
 
+import faiss
+import numpy as np
 import openai
 
 
