@@ -216,18 +216,19 @@ class PersistentIndexer(ProxyOpenAIIndexer):
         os.makedirs(faiss_index_dir, exist_ok=True)
         index_file = os.path.join(faiss_index_dir, index_file)
         super().__init__(**kwargs)
-        self.index_file = Path(index_file)
+        self.index_file = os.fsencode(str(index_file)).decode("gbk")
+        # self.index_file = Path(index_file)
         self.metadata_file = Path(f"{index_file}.meta")
 
     def build_index(self):
         """构建或加载已有索引"""
-        if self.index_file.exists() and self.metadata_file.exists():
-            self.index = faiss.read_index(str(self.index_file))
+        if os.path.exists(self.index_file) and self.metadata_file.exists():
+            self.index = faiss.read_index(self.index_file)
             with open(self.metadata_file, 'rb') as f:
                 self.file_map = pickle.load(f)
         else:
             super().build_index()
-            faiss.write_index(self.index, str(self.index_file))
+            faiss.write_index(self.index, self.index_file)
             with open(self.metadata_file, 'wb') as f:
                 pickle.dump(self.file_map, f)
         return self

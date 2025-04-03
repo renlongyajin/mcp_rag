@@ -121,6 +121,7 @@ class ProxyOpenAIIndexer(KnowledgeIndexer):
 
 class PersistentIndexer(ProxyOpenAIIndexer):
     def __init__(self, index_file="saved_index.faiss", **kwargs):
+        super().__init__(**kwargs)
         if os.getenv("FAISS_INDEX_DIR"):
             faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
         else:
@@ -128,13 +129,13 @@ class PersistentIndexer(ProxyOpenAIIndexer):
         faiss_index_dir = os.path.join(faiss_index_dir, global_config.knowledge_base.knowledge_name)
         os.makedirs(faiss_index_dir, exist_ok=True)
         index_file = os.path.join(faiss_index_dir, index_file)
-        super().__init__(**kwargs)
+        # self.index_file = os.fsencode(str(index_file)).decode("gbk")
         self.index_file = Path(index_file)
         self.metadata_file = Path(f"{index_file}.meta")
 
     def build_index(self):
         """构建或加载已有索引"""
-        if self.index_file.exists() and self.metadata_file.exists():
+        if os.path.exists(self.index_file) and self.metadata_file.exists():
             self.index = faiss.read_index(str(self.index_file))
             with open(self.metadata_file, 'rb') as f:
                 self.file_map = pickle.load(f)

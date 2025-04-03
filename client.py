@@ -148,7 +148,7 @@ def create_mcp_agent():
     # 3. 更新提示模板中的消息占位符
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-                你是一个智能助手，可以访问MCP知识库系统获取专业信息。
+                你是一个智能助手，你必须访问MCP知识库系统获取专业信息。
                 请用中文友好地回答用户问题，请使用工具获取最新信息。
                 如果使用工具查询，请确保查询语句精确且完整。
                 如果MCP知识库中不存在答案，请回复“我不知道”，不要自己编造答案。
@@ -185,8 +185,8 @@ def main2():
 
 
 if __name__ == "__main__":
-    # main()
-    main2()
+    main()
+    # main2()
 
 # python client.py --query LSTM --pretty
 # python client.py --endpoint http://localhost:8123/search2 --query LSTM --pretty
