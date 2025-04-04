@@ -14,7 +14,7 @@ def validate_token_length(texts, model_name: str = "text-embedding-3-small"):
 # 将文本分批处理（关键优化）
 
 
-def batch_embed(texts, model_name="text-embedding-3-small", max_tokens=8192 * 8):  # 8倍安全系数
+def batch_embed(texts, model_name="text-embedding-3-small", max_tokens=8192 * 8):
     encoder = encoding_for_model(model_name)
     batches = []
     current_batch = []
@@ -22,9 +22,14 @@ def batch_embed(texts, model_name="text-embedding-3-small", max_tokens=8192 * 8)
 
     for text in texts:
         tokens = encoder.encode(text)
-        if len(tokens) > 8191:  # 模型限制
-            continue  # 或进行截断
 
+        # 截断处理逻辑
+        if len(tokens) > 8191:
+            truncated_tokens = tokens[:8191]  # 截取前8191个token
+            text = encoder.decode(truncated_tokens)  # 将截断后的token转换回文本
+            tokens = truncated_tokens  # 更新tokens为截断后的版本
+
+        # 剩余逻辑保持不变
         if current_tokens + len(tokens) > max_tokens:
             batches.append(current_batch)
             current_batch = []
@@ -65,3 +70,10 @@ def my_test(valid_texts, model_name):
         for idx, reason in issues[:5]:
             print(f"索引 {idx}: {reason}")
             print(f"问题文本预览: {repr(valid_texts[idx][:50])}")
+
+
+def truncate_to_tokens(model_name, text, max_tokens):
+    encoder = encoding_for_model(model_name)
+    tokens = encoder.encode(text)
+    truncated_tokens = tokens[:max_tokens]
+    return encoder.decode(truncated_tokens)
