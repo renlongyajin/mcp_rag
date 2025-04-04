@@ -1,10 +1,7 @@
 .idea
 __pycache__
 cache/
-knowledge_base/
+knowledge_manage/knowledge_base.json
 previous/
-file_hashes.db
-file_hashes2.pkl
-example.py
 log/log.txt
 .env
