@@ -10,7 +10,7 @@ import numpy as np
 import openai
 
 from config.config import global_config
-from log import logger
+from log.log import logger
 from utils import batch_embed
 
 
@@ -19,11 +19,12 @@ class FileHashManager:
 
     def __init__(self, hash_db_path: str = "file_hashes2.pkl"):
         if os.getenv("FILE_MANAGER_DIR"):
-            file_manager_dir = os.getenv("FILE_MANAGER_DIR")
+            self.file_manager_dir = os.getenv("FILE_MANAGER_DIR")
         else:
-            file_manager_dir = "."
-        file_manager_dir = os.path.join(file_manager_dir, global_config.knowledge_base.knowledge_name)
-        self.hash_db_path = os.path.join(file_manager_dir, hash_db_path)
+            self.file_manager_dir = "."
+        knowledge_name = global_config.knowledge_manager.knowledge_base.knowledge_name
+        self.file_hash_manager_dir = os.path.join(self.file_manager_dir, knowledge_name)
+        self.hash_db_path = os.path.join(self.file_hash_manager_dir, hash_db_path)
         self._pending_changes = False
         self.hash_db_path = Path(self.hash_db_path)
         self.file_hashes = self._load_hashes()
@@ -73,6 +74,17 @@ class FileHashManager:
             if file_path not in existing_files:
                 self.remove_hash(file_path)
 
+    def change_knowledge_base(self, new_knowledge_base_name: str):
+        hash_db_path = "file_hashes2.pkl"
+        knowledge_name = new_knowledge_base_name
+        file_manager_dir = os.path.join(self.file_manager_dir, knowledge_name)
+        self.hash_db_path = os.path.join(file_manager_dir, hash_db_path)
+        self._pending_changes = False
+        self.hash_db_path = Path(self.hash_db_path)
+        self.file_hashes = self._load_hashes()
+
+    def is_hash_file_exist(self, filename: str):
+        return os.path.exists(os.path.join(self.file_hash_manager_dir, filename))
 
 class FileLevelIndexer:
     def __init__(self,
@@ -209,10 +221,11 @@ class ProxyOpenAIIndexer(FileLevelIndexer):
 class PersistentIndexer(ProxyOpenAIIndexer):
     def __init__(self, index_file="saved_index2.faiss", **kwargs):
         if os.getenv("FAISS_INDEX_DIR"):
-            faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
+            self.faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
         else:
-            faiss_index_dir = ".."
-        faiss_index_dir = os.path.join(faiss_index_dir, global_config.knowledge_base.knowledge_name)
+            self.faiss_index_dir = ".."
+        knowledge_name = global_config.knowledge_manager.knowledge_base.knowledge_name
+        faiss_index_dir = os.path.join(self.faiss_index_dir, knowledge_name)
         os.makedirs(faiss_index_dir, exist_ok=True)
         index_file = os.path.join(faiss_index_dir, index_file)
         super().__init__(**kwargs)
@@ -232,6 +245,15 @@ class PersistentIndexer(ProxyOpenAIIndexer):
             with open(self.metadata_file, 'wb') as f:
                 pickle.dump(self.file_map, f)
         return self
+
+    def change_knowledge_base(self, new_knowledge_base_name: str):
+        index_file = "saved_index2.faiss"
+        knowledge_name = new_knowledge_base_name
+        faiss_index_dir = os.path.join(self.faiss_index_dir, knowledge_name)
+        os.makedirs(faiss_index_dir, exist_ok=True)
+        index_file = os.path.join(faiss_index_dir, index_file)
+        self.index_file = Path(index_file)
+        self.metadata_file = Path(f"{index_file}.meta")
 
 
 class OptimizedIndexer2(PersistentIndexer):

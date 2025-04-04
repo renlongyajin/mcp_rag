@@ -10,7 +10,7 @@ import openai
 
 from FileHashManager import FileHashManager
 from config.config import global_config
-from log import logger
+from log.log import logger
 from utils import batch_embed
 
 
@@ -19,8 +19,8 @@ class KnowledgeIndexer:
         self.model = None  # 将在子类中初始化
         self.index = None
         self.file_map = {}  # {idx: (file_path, chunk_content)}
-        self.chunk_size = 1500
-        self.overlap = 300
+        self.chunk_size = global_config.knowledge_manager.knowledge_base.chunk_size
+        self.overlap = global_config.knowledge_manager.knowledge_base.chunk_overlap
         self.file_hashes = {}  # 用于增量更新
 
     def split_into_chunks(self, text):  # 改为双下划线或改为公共方法
@@ -123,13 +123,13 @@ class PersistentIndexer(ProxyOpenAIIndexer):
     def __init__(self, index_file="saved_index.faiss", **kwargs):
         super().__init__(**kwargs)
         if os.getenv("FAISS_INDEX_DIR"):
-            faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
+            self.faiss_index_dir = os.getenv("FAISS_INDEX_DIR")
         else:
-            faiss_index_dir = ".."
-        faiss_index_dir = os.path.join(faiss_index_dir, global_config.knowledge_base.knowledge_name)
+            self.faiss_index_dir = ".."
+        knowledge_name = global_config.knowledge_manager.knowledge_base.knowledge_name
+        faiss_index_dir = os.path.join(self.faiss_index_dir, knowledge_name)
         os.makedirs(faiss_index_dir, exist_ok=True)
         index_file = os.path.join(faiss_index_dir, index_file)
-        # self.index_file = os.fsencode(str(index_file)).decode("gbk")
         self.index_file = Path(index_file)
         self.metadata_file = Path(f"{index_file}.meta")
 
@@ -145,6 +145,15 @@ class PersistentIndexer(ProxyOpenAIIndexer):
             with open(self.metadata_file, 'wb') as f:
                 pickle.dump(self.file_map, f)
         return self
+
+    def change_knowledge_base(self, new_knowledge_base_name: str):
+        index_file = "saved_index.faiss"
+        knowledge_name = new_knowledge_base_name
+        faiss_index_dir = os.path.join(self.faiss_index_dir, knowledge_name)
+        os.makedirs(faiss_index_dir, exist_ok=True)
+        index_file = os.path.join(faiss_index_dir, index_file)
+        self.index_file = Path(index_file)
+        self.metadata_file = Path(f"{index_file}.meta")
 
 
 class OptimizedIndexer(PersistentIndexer):

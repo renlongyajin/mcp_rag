@@ -12,12 +12,13 @@ class FileHashManager:
 
     def __init__(self, hash_db_path: str = "./file_hashes.pkl"):
         if os.getenv("FILE_MANAGER_DIR"):
-            file_manager_dir = os.getenv("FILE_MANAGER_DIR")
+            self.file_manager_dir = os.getenv("FILE_MANAGER_DIR")
         else:
-            file_manager_dir = "."
-        file_manager_dir = os.path.join(file_manager_dir, global_config.knowledge_base.knowledge_name)
-        os.makedirs(file_manager_dir, exist_ok=True)
-        hash_db_path = os.path.join(file_manager_dir, hash_db_path)
+            self.file_manager_dir = "."
+        knowledge_name = global_config.knowledge_manager.knowledge_base.knowledge_name
+        self.file_hash_manager_dir = os.path.join(self.file_manager_dir, knowledge_name)
+        os.makedirs(self.file_hash_manager_dir, exist_ok=True)
+        hash_db_path = os.path.join(self.file_hash_manager_dir, hash_db_path)
         self.hash_db_path = Path(hash_db_path)
         self.file_hashes = self._load_hashes()
         self._pending_changes = False
@@ -87,3 +88,14 @@ class FileHashManager:
         for file_path in list(self.file_hashes.keys()):
             if file_path not in existing_files:
                 self.remove_hash(file_path)
+
+    def is_hash_file_exist(self, filename: str):
+        return os.path.exists(os.path.join(self.file_hash_manager_dir, filename))
+
+    def change_knowledge_base(self, new_knowledge_base_name: str):
+        knowledge_name = new_knowledge_base_name
+        self.file_hash_manager_dir = os.path.join(self.file_manager_dir, knowledge_name)
+        os.makedirs(self.file_hash_manager_dir, exist_ok=True)
+        hash_db_path = os.path.join(self.file_hash_manager_dir, "./file_hashes.pkl")
+        self.hash_db_path = Path(hash_db_path)
+        self.file_hashes = self._load_hashes()

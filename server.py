@@ -1,17 +1,15 @@
 import argparse
+import logging
 import os
 
-import numpy as np
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from FileLevelIndexer import OptimizedIndexer2
 from config.config import global_config
 from index.indexer import OptimizedIndexer
-
-load_dotenv()
+from log.log import logger
 
 
 def main():
@@ -20,6 +18,11 @@ def main():
     class QueryRequest(BaseModel):
         query: str
         top_k: int = 3
+        knowledge_name: str = global_config.knowledge_manager.knowledge_base.knowledge_name
+        no_chunk: bool = False
+
+        def my_print(self):
+            return f"query:{self.query}\ntok_k:{self.top_k}"
 
     def parse_args():
         parser = argparse.ArgumentParser(description='知识库服务配置')
@@ -30,12 +33,13 @@ def main():
 
     args = parse_args()
     knowledge_base_name = args.knowledge_base_name or os.getenv("KNOWLEDGE_BASE_NAME")
-    global_config.init_knowledge_base(knowledge_base_name)
+    global_config.knowledge_manager.init_knowledge_base(knowledge_base_name)
 
-    knowledge_dir = global_config.knowledge_base.knowledge_dir
+    knowledge_dir = global_config.knowledge_manager.knowledge_base.knowledge_dir
     print(
-        f"您正在启动知识库[{global_config.knowledge_base.knowledge_name}]"
-        f", 该知识库的描述如下: \n{global_config.knowledge_base.description}")
+        f"您正在启动知识库[{global_config.knowledge_manager.knowledge_base.knowledge_name}]"
+        f", 该知识库的描述如下: \n{global_config.knowledge_manager.knowledge_base.description}\n,"
+        f"注意：若请求自带数据库名称，将启动其他数据库")
 
     port = int(args.port or os.getenv("PORT"))
     print(f"端口: {port}")
@@ -45,55 +49,58 @@ def main():
         api_key=os.getenv("OPENAI_API_KEY"),
         proxy_url=os.getenv("OPENAI_BASE_URL"))
 
-    # ------------ 修改FastAPI端点 ------------
-    @app.post("/search")
-    async def semantic_search(request: QueryRequest):
-        try:
-            # 使用API生成查询向量
-            query_embed = indexer.encode([request.query])
-            distances, indices = indexer.index.search(query_embed, request.top_k)
-            results = []
-            for idx in indices[0]:
-                if idx in indexer.file_map:
-                    file_path, content = indexer.file_map[idx]
-                    results.append({
-                        "path": file_path,
-                        "excerpt": content
-                    })
-            return {"results": results}
-        except Exception as e:
-            print(f"Search error: {e}")
-            return {"error": str(e)}
-
-    class DummyModel:
-        def encode(self, texts):
-            return np.random.rand(len(texts), 384)
-
     file_level_indexer = OptimizedIndexer2(
         api_key=os.getenv("OPENAI_API_KEY"),
         proxy_url=os.getenv("OPENAI_BASE_URL")
     )
 
-    @app.post("/search2")
+    # ------------ 修改FastAPI端点 ------------
+    def change_knowledge_base(_indexer, new_knowledge_name):
+        global_config.knowledge_manager.init_knowledge_base(new_knowledge_name)
+        _indexer.change_knowledge_base(new_knowledge_name)
+        _indexer.hash_manager.change_knowledge_base(new_knowledge_name)
+        global_config.knowledge_manager.init_knowledge_base(new_knowledge_name)
+
+    def judge_change_knowledge(_indexer, request_knowledge_name):
+        global_config.knowledge_manager.load_knowledge_base()
+        if not (request_knowledge_name in global_config.knowledge_manager.all_knowledge_base_config):
+            raise Exception(f"不存在名为{request_knowledge_name}的知识库 ×")
+        if request_knowledge_name != global_config.knowledge_manager.knowledge_base.knowledge_name:
+            change_knowledge_base(_indexer, request_knowledge_name)
+            if not _indexer.hash_manager.is_hash_file_exist(request_knowledge_name):
+                info = global_config.knowledge_manager.get_info(request_knowledge_name)
+                new_knowledge_dir = info["knowledge_dir"]
+                _indexer.scan_files(new_knowledge_dir).build_index()
+            else:
+                _indexer.build_index()
+
+    @app.post("/search")
     async def semantic_search(request: QueryRequest):
         try:
+            request_knowledge_name = request.knowledge_name
+            no_chunk = request.no_chunk
+            if no_chunk:
+                now_index = file_level_indexer
+            else:
+                now_index = indexer
+            judge_change_knowledge(now_index, request_knowledge_name)
+
             # 使用API生成查询向量
-            query_embed = file_level_indexer.encode([request.query])
-            distances, indices = file_level_indexer.index.search(query_embed, request.top_k)
+            query_embed = now_index.encode([request.query])
+            distances, indices = now_index.index.search(query_embed, request.top_k)
             results = []
             for idx in indices[0]:
-                if idx in indexer.file_map:
-                    file_path, content = indexer.file_map[idx]
+                if idx in now_index.file_map:
+                    file_path, content = now_index.file_map[idx]
                     results.append({
                         "path": file_path,
                         "excerpt": content
                     })
+            logger.log(logging.INFO, msg=f"search success: {request.my_print()}")
             return {"results": results}
         except Exception as e:
             print(f"Search error: {e}")
             return {"error": str(e)}
-
-    # print(f"分块状态: {'禁用' if args.nochunk else '启用'}")
 
     # ------------ 3. 自动更新 ------------
     from apscheduler.schedulers.background import BackgroundScheduler
