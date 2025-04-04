@@ -1,6 +1,7 @@
 .idea
 __pycache__
 cache/
+knowledge_base
 knowledge_manage/knowledge_base.json
 previous/
 log/log.txt
