@@ -87,7 +87,7 @@ def main():
 
             # 使用API生成查询向量
             query_embed = now_index.encode([request.query])
-            distances, indices = now_index.index.search(query_embed, request.top_k)
+            distances, indices = now_index.index.search(query_embed, request.top_k+1)
             results = []
             for idx in indices[0]:
                 if idx in now_index.file_map:

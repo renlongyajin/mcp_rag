@@ -6,3 +6,4 @@ knowledge_manage/knowledge_base.json
 previous/
 log/log.txt
 .env
+.vscode
