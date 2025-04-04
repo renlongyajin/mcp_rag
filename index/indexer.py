@@ -73,7 +73,7 @@ class ProxyOpenAIIndexer(KnowledgeIndexer):
         return np.array(embeddings).astype('float32')
 
     def _batch_embedding(self, texts: List[str]) -> List[List[float]]:
-        """带代理支持的嵌入生成"""
+        """带代理支持的嵌入生成，具有重试机制和容错处理"""
         # 过滤非字符串和空文本
         valid_texts = [str(t).strip() for t in texts if t and str(t).strip()]
         if not valid_texts:
@@ -83,28 +83,59 @@ class ProxyOpenAIIndexer(KnowledgeIndexer):
         all_embeddings = []
         batches = batch_embed(valid_texts, model_name=self.api_model)
         batch_index = 0
+
         for batch in batches:
             batch_index += 1
-            start_time = time.time()
-            try:
-                # for text in batch:
-                response = self.client.embeddings.create(
-                    input=batch,
-                    model=self.api_model,
-                    timeout=30
-                )
-                # 将当前批次的embedding添加到总列表
-                batch_embeddings = [data.embedding for data in response.data]
-                all_embeddings.extend(batch_embeddings)
-                logger.info(
-                    f"[{batch_index}/{len(batches)}] 成功处理批次 {len(batch)} 条，耗时 {(time.time() - start_time):.2f}s")
-            except Exception as e:
-                logger.error(f"[{batch_index}/{len(batches)}] 批次处理失败：{str(e)}")
-                all_embeddings.extend([[] for _ in batch])  # 保持长度一致
-            # 最终验证（确保每个输入都有对应输出）
+            batch_size = len(batch)
+            max_retries = 3
+            retry_count = 0
+            batch_success = False
+
+            while retry_count < max_retries and not batch_success:
+                start_time = time.time()
+                try:
+                    response = self.client.embeddings.create(
+                        input=batch,
+                        model=self.api_model,
+                        timeout=30
+                    )
+                    batch_embeddings = [data.embedding for data in response.data]
+                    all_embeddings.extend(batch_embeddings)
+                    batch_success = True
+
+                    logger.info(
+                        f"[{batch_index}/{len(batches)}] 成功处理批次 {batch_size} 条，"
+                        f"耗时 {(time.time() - start_time):.2f}s"
+                    )
+                except Exception as e:
+                    retry_count += 1
+                    wait_time = min(2 ** retry_count, 10)  # 指数退避，最多等待10秒
+
+                    if retry_count < max_retries:
+                        logger.warning(
+                            f"[{batch_index}/{len(batches)}] 批次处理失败（尝试 {retry_count}/{max_retries}），"
+                            f"{wait_time}s后重试... 错误: {str(e)}"
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(
+                            f"[{batch_index}/{len(batches)}] 批次处理最终失败，跳过 {batch_size} 条文本。"
+                            f"错误: {str(e)}"
+                        )
+                        # 添加空列表以保持长度一致
+                        all_embeddings.extend([[] for _ in range(batch_size)])
+
+        # 最终验证（确保每个输入都有对应输出）
         if len(all_embeddings) != len(valid_texts):
-            logger.error(f"结果数量不匹配！输入 {len(valid_texts)} 条，输出 {len(all_embeddings)} 条")
-            return []
+            logger.error(
+                f"结果数量不匹配！输入 {len(valid_texts)} 条，输出 {len(all_embeddings)} 条。"
+                "已用空列表填充缺失项以保证程序继续运行。"
+            )
+            # 强制对齐长度（理论上不应该到达这里，因为前面已经处理了每个批次）
+            if len(all_embeddings) < len(valid_texts):
+                all_embeddings.extend([[] for _ in range(len(valid_texts) - len(all_embeddings))])
+            else:
+                all_embeddings = all_embeddings[:len(valid_texts)]
 
         return all_embeddings
 

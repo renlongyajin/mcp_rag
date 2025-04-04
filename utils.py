@@ -21,13 +21,8 @@ def batch_embed(texts, model_name="text-embedding-3-small", max_tokens=8192 * 8)
     current_tokens = 0
 
     for text in texts:
-        tokens = encoder.encode(text)
-
         # 截断处理逻辑
-        if len(tokens) > 8191:
-            truncated_tokens = tokens[:8191]  # 截取前8191个token
-            text = encoder.decode(truncated_tokens)  # 将截断后的token转换回文本
-            tokens = truncated_tokens  # 更新tokens为截断后的版本
+        tokens = truncate_to_tokens(model_name, text, 8191)
 
         # 剩余逻辑保持不变
         if current_tokens + len(tokens) > max_tokens:

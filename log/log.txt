@@ -96,3 +96,10 @@
 2025-04-04 15:27:28,477 - apscheduler.scheduler - INFO - Scheduler started
 2025-04-04 15:28:01,622 - httpx - INFO - HTTP Request: POST https://api.openai-proxy.org/v1/embeddings "HTTP/1.1 200 OK"
 2025-04-04 15:28:01,635 - uvicorn.asgi - INFO - [1/1] 成功处理批次 1 条，耗时 1.71s
+2025-04-04 15:41:25,520 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2025-04-04 15:41:25,520 - apscheduler.scheduler - INFO - Added job "main.<locals>.auto_reindex" to job store "default"
+2025-04-04 15:41:25,520 - apscheduler.scheduler - INFO - Scheduler started
+2025-04-04 15:41:28,298 - httpx - INFO - HTTP Request: POST https://api.openai-proxy.org/v1/embeddings "HTTP/1.1 200 OK"
+2025-04-04 15:41:28,449 - uvicorn.asgi - INFO - [1/1] 成功处理批次 11 条，耗时 2.82s
+2025-04-04 15:41:30,062 - httpx - INFO - HTTP Request: POST https://api.openai-proxy.org/v1/embeddings "HTTP/1.1 200 OK"
+2025-04-04 15:41:30,087 - uvicorn.asgi - INFO - [1/1] 成功处理批次 1 条，耗时 1.63s
