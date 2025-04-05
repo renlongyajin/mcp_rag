@@ -108,3 +108,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python client.py --query 半龙是什么？ --knowledge_name dnd5e不全书 --top_k 2 --pretty

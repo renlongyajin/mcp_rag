@@ -11,13 +11,18 @@ from config.config import global_config
 from index.indexer import OptimizedIndexer
 from log.log import logger
 
-
+SIMILARITY_THRESHOLD = {
+"strict": 0.3,    # 高精度场景
+"normal": 0.5,   # 通用场景（默认）
+"relaxed": 0.7,   # 召回优先场景
+"Unlimited":1.0
+}
 def main():
     app = FastAPI()
 
     class QueryRequest(BaseModel):
         query: str
-        top_k: int = 3
+        top_k: int 
         knowledge_name: str = global_config.knowledge_manager.knowledge_base.knowledge_name
         no_chunk: bool = False
 
@@ -74,6 +79,37 @@ def main():
             else:
                 _indexer.build_index()
 
+
+
+    # @app.post("/search")
+    # async def semantic_search(request: QueryRequest):
+    #     try:
+    #         request_knowledge_name = request.knowledge_name
+    #         no_chunk = request.no_chunk
+    #         if no_chunk:
+    #             now_index = file_level_indexer
+    #         else:
+    #             now_index = indexer
+    #         judge_change_knowledge(now_index, request_knowledge_name)
+
+    #         # 使用API生成查询向量
+    #         query_embed = now_index.encode([request.query])
+    #         distances, indices = now_index.index.search(query_embed, request.top_k+1)
+    #         results = []
+    #         for idx in indices[0]:
+    #             if idx in now_index.file_map:
+    #                 file_path, content = now_index.file_map[idx]
+    #                 results.append({
+    #                     "path": file_path,
+    #                     "excerpt": content
+    #                 })
+    #         logger.log(logging.INFO, msg=f"search success: {request.my_print()}")
+    #         return {"results": results}
+    #     except Exception as e:
+    #         print(f"Search error: {e}")
+    #         return {"error": str(e)}
+        
+
     @app.post("/search")
     async def semantic_search(request: QueryRequest):
         try:
@@ -84,20 +120,34 @@ def main():
             else:
                 now_index = indexer
             judge_change_knowledge(now_index, request_knowledge_name)
+            # ... [保持原有初始化逻辑不变] ...
 
-            # 使用API生成查询向量
+            # 添加相似度阈值配置（可根据业务需求调整）
+
+            # 获取搜索结果及相似度分数
             query_embed = now_index.encode([request.query])
             distances, indices = now_index.index.search(query_embed, request.top_k+1)
-            results = []
-            for idx in indices[0]:
-                if idx in now_index.file_map:
+            
+            # 过滤低质量结果
+            valid_results = []
+            for dist, idx in zip(distances[0], indices[0]):
+                if idx in now_index.file_map and dist < SIMILARITY_THRESHOLD["Unlimited"]:
                     file_path, content = now_index.file_map[idx]
-                    results.append({
+                    valid_results.append({
                         "path": file_path,
-                        "excerpt": content
+                        "excerpt": content,
+                        "similarity": float(1 - dist)  # 转换为相似度分数
                     })
+
+            # 无相关结果处理
+            if not valid_results:
+                return {"results": [{"excerpt": "No relevant information", "confidence": 0.0}]}
+
+            # 按相似度排序（可选）
+            valid_results.sort(key=lambda x: x["similarity"], reverse=True)
+            
             logger.log(logging.INFO, msg=f"search success: {request.my_print()}")
-            return {"results": results}
+            return {"results": valid_results[:request.top_k]}  # 确保不超过top_k
         except Exception as e:
             print(f"Search error: {e}")
             return {"error": str(e)}

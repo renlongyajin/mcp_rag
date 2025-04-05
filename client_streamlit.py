@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-from typing import Optional, Type
+from typing import Optional, Tuple, Type, Union
 
 import requests
 import streamlit as st
@@ -13,15 +13,10 @@ from nltk.tokenize import sent_tokenize
 from pydantic import BaseModel, Field
 
 from config.config import global_config
-
-# 调试模式设置
-if "--debug" in sys.argv:
-    sys.argv.remove("--debug")
-    import debugpy
-
-    debugpy.listen(5678)
-    debugpy.wait_for_client()
-    os.environ['PYDEVD_DISABLE_FILE_VALIDATION'] = '1'
+from langchain.agents.output_parsers.tools import ToolAgentAction
+from langchain_community.tools.tavily_search import TavilySearchResults  # TAVILY工具
+import json
+from typing import Dict, Any
 
 # Streamlit页面配置
 st.set_page_config(
@@ -30,7 +25,40 @@ st.set_page_config(
     layout="centered"
 )
 
-# 在Streamlit中增加CSS注入
+st.write("""
+<style>
+/* 不同来源的视觉区分 */
+div[data-testid="stMarkdownContainer"] ul {
+    position: relative;
+    padding-left: 1.5em;
+}
+
+div[data-testid="stMarkdownContainer"] ul:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.4em;
+    height: 80%;
+    width: 2px;
+    background: linear-gradient(#2ecc71, #3498db);
+}
+
+/* 网络结果样式 */
+.web-result {
+    border-left: 3px solid #3498db;
+    padding-left: 1rem;
+    margin: 1rem 0;
+}
+
+/* 知识库结果样式 */
+.kb-result {
+    border-left: 3px solid #2ecc71;
+    padding-left: 1rem;
+    margin: 1rem 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.write("""
 <style>
 .md-box {
@@ -41,6 +69,11 @@ st.write("""
 }
 </style>
 """, unsafe_allow_html=True)
+
+# # 强制禁用缓存
+# @st.cache_resource(ttl=1)  # 1秒缓存周期
+# def get_client():
+#     return global_config.sync_proxy_client
 
 DEFAULT_ENDPOINT = "http://localhost:8123/search"
 
@@ -65,30 +98,63 @@ class MCPRAGTool(BaseTool):
             headers={"Content-Type": "application/json"},
             timeout=10
         )
+        if not response.ok:
+            return (f"查询失败: {response.text}", {})
 
-        return self._format_response(response) if response.ok else f"查询失败: {response.text}"
+        raw_data = response.json()
+        formatted = self._format_response(raw_data)
+        return (formatted, {"raw_results": raw_data})
 
-    def _format_response(self, response) -> str:
-        results = [
-            f"文件路径: {item.get('path', '无')}\n内容: {item.get('excerpt', '无')}"
-            for item in response.json().get("results", [])
-        ]
+        # return self._format_response(response) if response.ok else f"查询失败: {response.text}"
+    def _format_response(self, raw_data: dict) -> str:
+        """生成包含结构化数据的Markdown格式字符串"""
+        results = []
+        for idx, item in enumerate(raw_data.get("results", []), 1):  # 只取前3个结果
+            path = item.get('path', '无路径信息')
+            content = str(item.get('excerpt', '')).strip()
+            
+            results.append(
+                f"### 结果 {idx}\n"
+                f"**路径**: `{path}`\n"
+                f"**内容**: {content}\n"
+                "---"
+            )
         return "\n\n".join(results) if results else "未找到相关结果"
-
-
-
-
+    # def _format_response(self, response) -> str:
+    #     results = [
+    #         f"文件路径: {item.get('path', '无')}\n内容: {item.get('excerpt', '无')}"
+    #         for item in response.json().get("results", [])
+    #     ]
+    #     return "\n\n".join(results) if results else "未找到相关结果"
 
 def create_mcp_agent():
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
-    tools = [MCPRAGTool()]
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3,
+                     http_client=global_config.sync_proxy_client)
+    # llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+    tools = [MCPRAGTool(),TavilySearchResults(max_results=3)]
+    my_prompt_template = """# 指令系统 v2.1
+                            ## 知识库配置
+                            - 当前库：{knowledge_name} 
+                            - 返回数：{top_k}
 
+                            ## 强制流程
+                            1. 首次必须使用`mcp_rag_search`查询（参数必须包含：query+knowledge_name+top_k）
+                            2. 当且仅当出现以下情况时使用`web_search`：
+                            - 根据知识库的回答无法准确回答问题，相关信息不明确或者找不到,当前问题为{question}
+                            - 用户明确要求实时信息
+                            3. 最终回答必须包含：
+                            - 📌 来源标记（知识库/网络）
+                            - 🔍 检索关键词
+                            - 📂 知识库路径（若最终采用知识库则必须罗列参考路径）
+                            - 📂 对应网址（若最终采用网络搜索则必须罗列网址）
+
+                            ## 错误处理
+                            ❌ 禁止在知识库无结果时自行推理
+                            ✅ 必须通过工具获取确切信息"""
+
+    
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "当前知识库：{knowledge_name}\n知识库的结果返回数：{top_k}可用知识库：{kb_list}\n请严格根据知识库内容回答。"
-                   "请在严格在当前知识库中查找知识，如果没有答案，请返回‘知识库中不存在’，"
-                   "请严格遵循工具调用规则，确保参数匹配。"
-                   "最终请输出参考的文件的路径，确保可以访问。"
-                   "请确保所有的文字输出都采用markdown格式，格式直观、简洁、优雅，记得在合适的地方分段。"),
+        ("system", my_prompt_template),
         MessagesPlaceholder("chat_history", optional=True),
         ("human", "{input}"),
         MessagesPlaceholder("agent_scratchpad")
@@ -98,6 +164,7 @@ def create_mcp_agent():
         agent=create_openai_tools_agent(llm, tools, prompt),
         tools=tools,
         verbose=True,
+        return_intermediate_steps=True, #返回中间结果
         handle_parsing_errors="请重新表述您的问题"
     )
 
@@ -170,10 +237,64 @@ def main():
         with st.chat_message("assistant"):
             response = st.session_state.agent.invoke({
                 "input": prompt,
+                "question": prompt,
                 "knowledge_name": st.session_state.selected_kb,
-                "kb_list": ", ".join([kb.knowledge_name for kb in global_config.knowledge_manager.all_knowledge_base]),
+                # "kb_list": ", ".join([kb.knowledge_name for kb in global_config.knowledge_manager.all_knowledge_base]),
                 "top_k": st.session_state.top_k
             })
+
+            # 显示中间步骤
+            if response.get("intermediate_steps"):
+                with st.expander("🧠 思考过程", expanded=False):
+                    for i, step in enumerate(response["intermediate_steps"], 1):
+                        action, result = step[0], step[1]
+                        
+                        step_content = [f"### 步骤 {i}"]
+                        
+                        if isinstance(action, ToolAgentAction): 
+                            # 工具类型标识
+                            tool_type = "联网搜索" if action.tool == "tavily_search_results_json" else "本地知识库查询"
+                            step_content.append(f"**工具类型**: {tool_type}")
+                            
+                            # 通用信息展示
+                            step_content.extend([
+                                f"**工具名称**: `{action.tool}`",
+                                "**参数**:",
+                                "\n".join([f"- `{k}`: `{v}`" for k, v in action.tool_input.items()]),
+                                f"**日志**:\n```\n{action.log.strip()}\n```"
+                            ])
+                            
+                            # 结果特殊处理
+                            step_content.append("**执行结果**:")
+                            if action.tool == "tavily_search_results_json":
+                                if isinstance(result, tuple):
+                                    # 处理(content, raw_data)格式
+                                    content, raw_data = result
+                                    step_content.append(content)
+                                    with st.expander("查看原始数据", expanded=False):
+                                        st.json(raw_data["raw_results"])
+                                elif isinstance(result, str) and result.startswith("联网搜索失败"):
+                                    step_content.append(f"❌ {result}")
+                                else:
+                                    step_content.append(f"```\n{str(result)[:300]}\n```")
+                            elif action.tool == "mcp_rag_search":
+                                if isinstance(result, tuple) and len(result) == 2:
+                                    content, raw_data = result
+                                    step_content.append(content)
+                                    # 使用容器替代expand
+                               
+                                    for idx, item in enumerate(raw_data.get("raw_results", {}).get("results", []), 1):
+                                        step_content.append(f"**结果** {idx}\n")
+                                        step_content.append(f"路径: {item.get('path', '无路径')}\n")
+                                        step_content.append(f"内容摘要: {str(item.get('excerpt', '无内容'))[:300]}\n")
+                                        step_content.append("---")
+                            
+                            else:
+                                step_content.append(f"```\n{str(result)[:300]}\n```")
+                        
+                        st.markdown("\n\n".join(step_content))
+                        st.divider()
+                        
 
             full_response = response.get("output", "无法生成回答")
             display_text = ""
@@ -186,20 +307,6 @@ def main():
                 display_text += sent + " "
                 placeholder.markdown(display_text + "▌", unsafe_allow_html=True)
                 time.sleep(0.05)
-
-            # display_text = display_text.replace("\n", "\\\n")  # 保留换行符
-            # 使用带CSS的HTML包装
-            # placeholder.markdown(f"""
-            # <div style="line-height:1.8;font-family: 'SF Mono', Consolas, monospace">
-            # {display_text}
-            # </div>
-            # """, unsafe_allow_html=True)
-
-            # # 流式显示效果
-            # for word in full_response.split():
-            #     display_text += word + " "
-            #     placeholder.markdown(display_text + "▌")
-            #     time.sleep(0.05)
             placeholder.markdown(display_text)
 
         st.session_state.messages.append({"role": "assistant", "content": full_response})

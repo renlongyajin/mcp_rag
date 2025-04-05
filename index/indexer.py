@@ -64,7 +64,8 @@ class ProxyOpenAIIndexer(KnowledgeIndexer):
         self.api_model = model_name
         self.client = openai.OpenAI(
             api_key=api_key,
-            base_url=proxy_url if proxy_url else base_url
+            base_url=proxy_url if proxy_url else base_url,
+            http_client=global_config.sync_proxy_client
         )
 
     def encode(self, queries: List[str]) -> np.ndarray:
